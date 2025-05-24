@@ -16,26 +16,26 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5 # Action to set up a Python environment on the runner
         with:
-          python-version: '3.8' # Specify the Python version your Flask app uses (adjust if different)
+          python-version: '3.8' # Specify the Python version your Flask app uses (adjust if different, e.g., '3.9', '3.10')
 
       - name: Install dependencies (on GitHub Actions runner)
-        # This step is primarily for ensuring the workflow can run,
-        # and for any build/test steps you might add later.
-        # Dependencies will be re-installed on EC2 during deployment.
+        # This step installs dependencies on the temporary GitHub Actions runner.
+        # This is useful for running tests, linters, or builds on the runner itself.
+        # Dependencies will also be installed/updated on your EC2 instance later in the deployment process.
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt # Installs dependencies listed in requirements.txt
+          pip install -r requirements.txt # Installs dependencies listed in your committed requirements.txt file
 
       - name: Deploy to EC2 via SCP (Secure Copy)
         uses: appleboy/scp-action@master # GitHub Action to securely copy files
         with:
           host: ${{ secrets.EC2_HOST }} # Uses the EC2_HOST secret (your EC2 IP/DNS)
           username: ${{ secrets.EC2_USERNAME }} # Uses the EC2_USERNAME secret (your EC2 SSH user)
-          key: ${{ secrets.EC2_SSH_KEY }} # Uses the EC2_SSH_KEY secret (your EC2 SSH private key)
-          source: "." # Copies all files from the current directory (your repo root)
+          key: ${{ secrets.EC2_SSH_KEY }} # Uses the EC2_SSH_KEY secret (your EC2 SSH private key content)
+          source: "." # Copies all files from the current directory (your repo root on the runner)
           target: "/home/ubuntu/FlaskChess" # The destination path on your EC2 instance (e.g., /home/ubuntu/FlaskChess)
-          strip_components: 1 # Removes the top-level directory when copying,
-                              # so files from the repo root go directly into target.
+          strip_components: 1 # This is important: it copies the *contents* of your repo root directly into the target directory,
+                              # instead of creating an extra 'FlaskChess' folder inside 'FlaskChess'.
 
       - name: Restart Flask App on EC2 via SSH
         uses: appleboy/ssh-action@master # GitHub Action to execute commands on EC2
@@ -45,17 +45,18 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             echo "Navigating to application directory..."
-            cd /home/ubuntu/FlaskChess # IMPORTANT: Navigate to your application's directory on EC2
+            cd /home/ubuntu/FlaskChess # IMPORTANT: Navigate to your application's base directory on EC2
 
             echo "Installing/updating Python dependencies on EC2..."
-            # It's crucial to install/update dependencies on the EC2 instance
-            # in case your requirements change.
+            # It's crucial to re-install/update dependencies on the EC2 instance itself,
+            # as new packages might be added or versions updated in your requirements.txt.
             pip install -r requirements.txt
 
             echo "Restarting Flask application service..."
-            # This command restarts the systemd service you set up earlier.
-            # IMPORTANT: Replace 'flaskapp.service' with the actual name of your systemd service.
-            sudo systemctl daemon-reload # Reload systemd manager configuration
+            # This command restarts the systemd service you set up on EC2.
+            # IMPORTANT: Replace 'flaskapp.service' with the actual name of your systemd service
+            # if you named it differently.
+            sudo systemctl daemon-reload # Reload systemd manager configuration (good practice after changes)
             sudo systemctl restart flaskapp.service # Restart your Flask app service
 
             echo "Deployment complete and Flask app restarted!"
